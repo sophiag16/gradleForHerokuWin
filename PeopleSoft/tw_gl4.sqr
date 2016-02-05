@@ -1,0 +1,189 @@
+
+!*********************************************************************
+!* ThoughtWorks                                     
+!* Date modified     : 13-AUG-2012                                   
+!* Description       :SQR for TW_GL_JOURNALS_FUNCTIONAL
+!* Author : Ruchika                                 
+!********************************************************************* 
+
+
+!********************************************************************* 
+! Include SQC's and Define variables
+!********************************************************************* 
+#include 'setenv.sqc'     !Set environment
+#include 'stdapi.sqc'     !Update Process AP
+#include 'datetime.sqc'
+#Define OUTPUT_FILE 1
+#Define FAILURE 1
+#Define FILE_LENGTH 512
+
+
+begin-setup
+ declare-variable
+  date $from_dt
+  date $to_dt
+  integer #diff
+ end-declare
+end-setup
+
+
+!********************************************************************* 
+!		PROGRAM  SECTION                                                    
+!-------------------------------------------------------------------------
+! Desc: Main Program Section of the SQR. 
+! Parameter: NA
+! Parameter Type: NA
+!********************************************************************* 
+
+BEGIN-PROGRAM
+   encode '<13>' into $cr
+   encode '<10>' into $lf
+   encode '<9>' into $tab 
+
+   DO STDAPI-INIT
+   DO FETCH_RUNCNTL
+   DO FETCH_DATA
+   DO STDAPI-TERM 
+END-PROGRAM
+
+!*************************************************************************
+!-------------------------------------------------------------------------
+! Procedure DO FETCH_RUNCNTL
+!************************************************************************* 
+ BEGIN-PROCEDURE FETCH_RUNCNTL
+ 
+BEGIN-SELECT
+REC.FROM_DT
+REC.TO_DT
+REC.BUSINESS_UNIT
+   Let $from_dt = &REC.FROM_DT
+   Let $to_dt = &REC.TO_DT
+   Let $business_unit = &REC.BUSINESS_UNIT
+  FROM PS_TW_GL_RUN4_TBL REC
+  WHERE  REC.OPRID =  $PRCS_OPRID
+  AND REC.RUN_CNTL_ID =  $PRCS_RUN_CNTL_ID
+END-SELECT
+
+
+begin-select
+ORIGOUTDEST,
+PRCSOUTPUTDIR
+ if rtrim (upper(&origoutdest), ' ') = '%%LOG/OUTPUT DIRECTORY%%'
+     let $directory = rtrim(&prcsoutputdir, ' ') || '\'
+ else
+     let $directory = rtrim(&origoutdest, ' ')
+ end-if
+ from PSPRCSPARMS where
+  PRCSINSTANCE = #prcs_process_instance
+end-select
+ LET $FILE_PATH = $directory
+
+ LET $FILE_NAME = $FILE_PATH  ||  '/GL_JOURNALS_FUNCTIONAL.csv'
+   
+    
+   OPEN $FILE_NAME AS 1
+   FOR-WRITING  RECORD=512:Vary
+   
+ END-PROCEDURE FETCH_RUNCNTL 
+   
+   !*************************************************************************
+   !-------------------------------------------------------------------------
+   ! Procedure DO FETCH_DATA
+   !************************************************************************* 
+ BEGIN-PROCEDURE FETCH_DATA
+ Let $comma =','
+ Let $space =' '
+ write 1 from 'Ledger' $comma 'Business unit' $comma 'Date' $comma 'Journal ID' $comma 'Line#' $comma 'Unit' $comma 'Account' $comma 'Descr' $comma 'Dept' $comma 'Product'  $comma 'Project' $comma 'Activity' $comma 'Line Descr' $comma 'Descr' $comma 'Long Descr' $comma 'Source'  $comma 'User' $comma 'Divisor' $comma 'Multipler' $comma 'Amount' $comma 'Currency' $comma 'Amount' $comma 'Currency'  $comma 'Posted' $comma 'Reference' $comma 'Emplid' 
+ 
+ 
+BEGIN-SELECT 
+B.LEDGER
+A.BUSINESS_UNIT
+A.JOURNAL_DATE
+A.JOURNAL_ID
+B.JOURNAL_LINE
+B.BUSINESS_UNIT
+B.ACCOUNT
+C.DESCR
+B.DEPTID
+B.PRODUCT
+B.PROJECT_ID
+B.ACTIVITY_ID
+B.LINE_DESCR
+REPLACE(REPLACE(A.DESCR, CHR(10), ''), CHR(13), '')   &DESCRA
+REPLACE(REPLACE(A.DESCR254, CHR(10), ''), CHR(13), '')   &DESCR254
+A.SOURCE
+A.OPRID
+B.RATE_DIV
+B.RATE_MULT
+B.MONETARY_AMOUNT
+B.CURRENCY_CD
+B.FOREIGN_AMOUNT 
+B.FOREIGN_CURRENCY
+A.POSTED_DATE
+D.OPEN_ITEM_KEY
+B.JRNL_LN_REF
+	Let $JRNL_LN_REF = &B.JRNL_LN_REF
+	let $first_two_char = substr(&A.JOURNAL_ID, 1,2) 
+	if $first_two_char = 'AR' 
+	do AR_reference
+	ELSE
+	LET $JRNL_LN_REF 		= '="' || &B.JRNL_LN_REF || '"' 
+	end-if 
+
+    let $line_descr = translate (&B.LINE_DESCR,',',' ')
+      let $descr    = translate (&DESCRA,',',' ')
+     let $descr254 = translate (&DESCR254,',',' ')
+
+  let $n_journal_descr = translate($descr254, $tab,'')
+  let $n_journal_descr = translate($n_journal_descr, $cr,'')
+  let $n_journal_descr = translate($n_journal_descr, $lf,'')
+  LET $deptid 		= '="' || &B.DEPTID || '"' 
+  LET $product 		= '="' || &B.PRODUCT || '"' 
+  
+ checking git
+  
+  let $str_write  = &B.FOREIGN_CURRENCY || $comma || &A.POSTED_DATE || $comma || $JRNL_LN_REF
+    write 1 from  &B.LEDGER $comma &A.BUSINESS_UNIT $comma &A.JOURNAL_DATE  $comma &A.JOURNAL_ID $comma &B.JOURNAL_LINE $comma &B.BUSINESS_UNIT $comma &B.ACCOUNT $comma &C.DESCR $comma $deptid $comma $product $comma &B.PROJECT_ID $comma &B.ACTIVITY_ID $comma $line_descr $comma $descr $comma $n_journal_descr $comma &A.SOURCE $comma &A.OPRID $comma &B.RATE_DIV $comma &B.RATE_MULT $comma &B.MONETARY_AMOUNT $comma &B.CURRENCY_CD  $comma &B.FOREIGN_AMOUNT $comma $str_write $comma &D.OPEN_ITEM_KEY 
+  
+    FROM PS_JRNL_HEADER A, PS_JRNL_LN B, PS_GL_ACCOUNT_TBL C , PS_OPEN_ITEM_GL D 
+    WHERE A.BUSINESS_UNIT = B.BUSINESS_UNIT
+       AND A.JOURNAL_ID = B.JOURNAL_ID
+       AND A.JOURNAL_DATE = B.JOURNAL_DATE
+       AND A.UNPOST_SEQ = B.UNPOST_SEQ
+       AND C.ACCOUNT = B.ACCOUNT
+       AND C.EFFDT =
+          (SELECT MAX(C_ED.EFFDT) FROM PS_GL_ACCOUNT_TBL C_ED
+          WHERE C.SETID = C_ED.SETID
+            AND C.ACCOUNT = C_ED.ACCOUNT
+            AND C_ED.EFFDT <= SYSDATE)
+       AND A.JOURNAL_DATE BETWEEN $from_dt and $to_dt
+       AND A.JRNL_HDR_STATUS IN ('P','U')
+       AND A.LEDGER_GROUP = 'ACTUALS'
+       AND B.LEDGER IN ('FUNCTIONAL')
+       AND A.BUSINESS_UNIT = $business_unit
+       AND B.BUSINESS_UNIT =  D.BUSINESS_UNIT(+)
+       AND B.JOURNAL_ID =  D.JOURNAL_ID(+)
+       AND B.JOURNAL_DATE =  D.JOURNAL_DATE(+)
+       AND B.UNPOST_SEQ =  D.UNPOST_SEQ(+)
+       AND B.JOURNAL_LINE =  D.JOURNAL_LINE(+)
+       AND B.LEDGER =  D.LEDGER(+)
+              
+END-SELECT
+  CLOSE 1
+END-PROCEDURE FETCH_DATA
+
+
+BEGIN-PROCEDURE AR_reference
+
+BEGIN-SELECT 
+item 
+ let $JRNL_LN_REF=&item
+from ps_item_dst 
+where journal_id=&A.JOURNAL_ID
+and ledger=&B.LEDGER
+END-SELECT
+
+END-PROCEDURE AR_reference 
+ 
+ 
